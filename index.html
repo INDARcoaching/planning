@@ -344,8 +344,8 @@ details.card > summary::-webkit-details-marker { display: none; }
 .meter { height: 8px; border-radius: 8px; background: var(--soft); overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--c, var(--acc)); border-radius: 8px; }
 .mini-list { display: grid; }
-.mini { display: flex; justify-content: space-between; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--line); font-size: 15px; text-align: left; width: 100%; }
-.mini:first-child { border-top: 0; }
+.mini-list > .mini { display: flex; justify-content: space-between; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--line); font-size: 15px; text-align: left; width: 100%; }
+.mini-list > .mini:first-child { border-top: 0; }
 .pcard { padding: 12px 0; border-top: 1px solid var(--line); }
 .pcard:first-of-type { border-top: 0; }
 .pc-h { display: flex; gap: 10px; align-items: flex-start; }
@@ -958,6 +958,9 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
   // Mises à jour locales immédiates (le rafraîchissement suit en arrière-plan).
   function localRemove(c, i) {
     Object.keys(S.weeks).forEach(function (k) { var w = S.weeks[k]; if (w.events) w.events = w.events.filter(function (e) { return !(e.c === c && e.i === i); }); });
+    var other = function (x) { return !(x.ev.c === c && x.ev.i === i); };
+    if (S.offs) S.offs = S.offs.filter(other);
+    if (S.conflicts) S.conflicts = S.conflicts.filter(other);
   }
   function localAdd(e) {
     if (!e) return;
@@ -975,7 +978,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var mon = weekKey(S.date);
     Object.keys(S.weeks).forEach(function (k) { S.weeks[k].stale = true; });
     S.coachData = {};
-    if (opts.conflicts) S.conflicts = null;
+    if (opts.conflicts || S.tab === 'todo') S.conflicts = null;
     return call('boot', { from: mon, to: addDays(mon, 7) }).then(function (b) {
       var week = applyBoot(b);
       if (week) setWeek(week);
@@ -1113,7 +1116,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var nav = $('#nav');
     if (S.role !== 'admin') { nav.innerHTML = ''; nav.hidden = true; return; }
     nav.hidden = false;
-    var todo = ((S.boot.pending || []).length) + (S.conflicts ? S.conflicts.length : (S.boot.conflictsN || 0));
+    var todo = ((S.boot.pending || []).length) + (S.conflicts ? S.conflicts.length + (S.offs || []).length : (S.boot.conflictsN || 0));
     var items = [['agenda', 'cal', 'Agenda'], ['coach', 'users', 'Coachés'], ['todo', 'inbox', 'À traiter'], ['more', 'more', 'Plus']];
     nav.innerHTML = items.map(function (x) {
       return '<button data-act="tab" data-t="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '">' + ic(x[1]) +
@@ -1196,7 +1199,10 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         (ds === t ? '<em>aujourd\'hui</em>' : '') + '</button>' +
         (S.role === 'admin' && ds >= t && it.timed.length ? '<button class="ib sm" data-act="shift-open" data-d="' + ds + '" aria-label="Décaler la journée">' + ic('clock') + '</button>' : '') +
         (S.role === 'admin' ? '<button class="ib sm" data-act="add-day" data-d="' + ds + '" aria-label="Ajouter ce jour">' + ic('plus') + '</button>' : '') + '</header>';
-      if (it.off) h += '<div class="offband">' + ic('sun') + ' ' + esc(it.off) + ' — pas de séances fixes</div>';
+      if (it.off) {
+        var nOff = S.role === 'admin' ? it.timed.filter(function (e) { return offFlag(e, it); }).length : 0;
+        h += '<div class="offband">' + ic('sun') + ' ' + esc(it.off) + (nOff ? ' — ' + plural(nOff, 'séance à traiter', 'séances à traiter') : '') + '</div>';
+      }
       var list = '';
       it.allday.forEach(function (e) {
         if (e.k === 'off' || (it.off && e.t === it.off)) return;
@@ -1204,11 +1210,12 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       });
       it.tasks.forEach(function (k) { list += taskRow(k); });
       it.timed.forEach(function (e) {
-        var conf = S.role === 'admin' && conflictsOf(e).length;
+        var conf = S.role === 'admin' && conflictsOf(e).length, offF = S.role === 'admin' && offFlag(e, it);
         list += '<button class="it k-' + esc(e.k || 'x') + (e.ro ? ' ro' : '') + (e.e < nowP() ? ' done' : '') + '" data-act="ev" data-k="' + reg(e) + '" style="--c:' + esc(evColor(e)) + '">' +
           '<span class="it-t"><b>' + e.s.slice(11) + '</b><small>' + e.e.slice(11) + '</small></span>' +
           '<span class="it-b"><span class="it-n">' + (e.k === 'session' ? ic('rep', 'mini') : '') + esc(dispT(e)) + '</span><span class="it-s">' + esc(itemSub(e)) + '</span></span>' +
-          (conf ? '<span class="flag" title="Chevauchement">' + ic('warn') + '</span>' : '') + '</button>';
+          (conf ? '<span class="flag" title="Chevauchement">' + ic('warn') + '</span>' : '') +
+          (offF ? '<span class="flag" title="Pendant tes congés : à traiter">' + ic('sun') + '</span>' : '') + '</button>';
       });
       h += list ? '<div class="wl-items">' + list + '</div>' : '<div class="wl-empty">Rien de prévu</div>';
       h += '</section>';
@@ -1260,10 +1267,10 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       var col = '<div class="tl-col' + (ds === t ? ' tod' : '') + (all[i].off ? ' off' : '') + '" data-d="' + ds + '">';
       evs.forEach(function (x) {
         var e = x.e, top = (x.sm - h0 * 60) * hpx / 60, ht = Math.max((x.em - x.sm) * hpx / 60 - 2, 20);
-        var conf = S.role === 'admin' && conflictsOf(e).length;
+        var conf = S.role === 'admin' && conflictsOf(e).length, offF = S.role === 'admin' && offFlag(e, all[i]);
         col += '<button class="tl-ev k-' + esc(e.k || 'x') + (e.ro ? ' ro' : '') + (e.e < now ? ' done' : '') + (ht < 34 ? ' short' : '') + '" data-act="ev" data-k="' + reg(e) + '" ' +
           'style="top:' + top + 'px;height:' + ht + 'px;left:calc(' + (x.col / x.n * 100) + '% + 1px);width:calc(' + (100 / x.n) + '% - 3px);--c:' + esc(evColor(e)) + '">' +
-          '<span class="tl-et">' + e.s.slice(11) + (conf ? ' ' + ic('warn', 'mini') : '') + (e.k === 'session' ? ' ' + ic('rep', 'mini') : '') + '</span><span class="tl-en">' + esc(dispT(e)) + '</span>' +
+          '<span class="tl-et">' + e.s.slice(11) + (conf ? ' ' + ic('warn', 'mini') : '') + (offF ? ' ' + ic('sun', 'mini') : '') + (e.k === 'session' ? ' ' + ic('rep', 'mini') : '') + '</span><span class="tl-en">' + esc(dispT(e)) + '</span>' +
           (ht >= 52 && e.l ? '<span class="tl-el">' + esc(e.l) + '</span>' : '') + '</button>';
       });
       if (ds === t) {
@@ -1317,11 +1324,12 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     if (on) { btn.disabled = true; btn.setAttribute('data-txt', btn.innerHTML); btn.innerHTML = '<span class="spin"></span>' + esc(txt || 'Enregistrement…'); }
     else { btn.disabled = false; if (btn.getAttribute('data-txt')) btn.innerHTML = btn.getAttribute('data-txt'); }
   }
+  function offMsg(r) { return 'Congés ajoutés' + (r && r.notes ? ' : ' + plural(r.notes, 'séance à traiter', 'séances à traiter') + ' (voir « À traiter »)' : ''); }
   function act(btn, promise, okMsg, after) {
     btnBusy(btn, true);
     return promise.then(function (r) {
       btnBusy(btn, false);
-      if (okMsg) toast(okMsg);
+      if (okMsg) toast(typeof okMsg === 'function' ? okMsg(r) : okMsg);
       if (after) after(r);
       return r;
     }, function (e) { btnBusy(btn, false); toast(e.message, 'err'); throw e; });
@@ -1352,6 +1360,11 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     if (conf.length) {
       dl += '<div class="note warn">' + ic('warn') + '<div>Chevauche : ' + conf.map(function (o) { return esc(o.t) + ' (' + o.s.slice(11) + '–' + o.e.slice(11) + ')'; }).join(', ') +
         '<br><button class="link" data-act="ack" data-c="' + esc(e.c) + '" data-i="' + esc(e.i) + '">C\'est voulu, ne plus signaler</button></div></div>';
+    }
+    var dI = S.role === 'admin' && !e.ad ? dayItems(e.s.slice(0, 10)) : null;
+    if (dI && offFlag(e, dI)) {
+      dl += '<div class="note warn">' + ic('sun') + '<div>Prévue pendant tes congés (« ' + esc(dI.off) + ' »). Déplace-la, annule-la ou garde-la.' +
+        '<br><button class="link" data-act="ack" data-kind="off" data-c="' + esc(e.c) + '" data-i="' + esc(e.i) + '">La garder, ne plus signaler</button></div></div>';
     }
     if (dl) h += '<div class="ev-body">' + dl + '</div>';
     var k = regS(e), a = '';
@@ -1420,12 +1433,14 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
 
   // Annuler une séance fixe / une séance ponctuelle
   function openCancel(e) {
-    var r = seriesById(e.sid), k = regS(e);
-    var h = sheetHead('Annuler la séance', esc(e.t) + ' · ' + esc(fDT(e.s)));
-    h += '<div class="opts">' +
+    var r = seriesById(e.sid), k = regS(e), coach = !!(e.cid || (r && r.coacheeId));
+    var h = sheetHead(coach ? 'Annuler la séance' : 'Annuler cette fois', esc(e.t) + ' · ' + esc(fDT(e.s)));
+    h += '<div class="opts">' + (coach ?
       opt('cancel', k, 'pending', 'inbox', 'À rattraper', 'Elle part dans « À traiter » avec des créneaux libres proposés. Elle garde sa place dans le pack.') +
       opt('cancel', k, 'due', 'check', 'Annulée, séance due', 'Comptée quand même (annulation tardive).') +
-      opt('cancel', k, 'skip', 'x', 'Annulée, ne compte pas', r && r.count ? 'Le pack est prolongé d\'une séance à la fin.' : 'Simplement retirée du planning.') +
+      opt('cancel', k, 'skip', 'x', 'Annulée, ne compte pas', r && r.count ? 'Le pack est prolongé d\'une séance à la fin.' : 'Simplement retirée du planning.') :
+      opt('cancel', k, 'pending', 'inbox', 'À replacer', 'Elle part dans « À traiter » avec des créneaux libres proposés.') +
+      opt('cancel', k, 'skip', 'x', 'Annulée cette fois', r ? 'Retirée du planning ; les suivantes restent.' : 'Retirée du planning.')) +
       '</div>';
     openSheet(h);
   }
@@ -1613,7 +1628,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var t = effType(), c = D.coachee ? coachee(D.coachee) : null, p, label;
     if (t === 'off') {
       p = call('addOff', { from: D.date, to: D.endDate || D.date, title: D.title || 'Congés' });
-      label = 'Congés ajoutés';
+      label = offMsg; S.conflicts = null;
     } else if (t === 'tache') {
       p = call('addTask', { title: D.title, date: D.date || '', notes: D.notes });
       label = 'Tâche ajoutée';
@@ -1705,7 +1720,6 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         if (p.to && p.to < today()) return;
         h += '<div class="pill warn">' + ic('pause') + ' Pause ' + (p.to ? 'du ' + fD(p.from) + ' au ' + fD(p.to) : 'depuis le ' + fD(p.from) + ', jusqu\'à nouvel ordre') + '</div>';
       });
-      if (x.offSkips && x.offSkips.length) h += '<p class="mut small">' + ic('sun', 'mini') + ' ' + plural(x.offSkips.length, 'séance sautée', 'séances sautées') + ' pendant tes congés.</p>';
       h += '</div>';
     });
     h += '</section>';
@@ -1832,15 +1846,21 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
   function loadConflicts() {
     if (S.loadingConf) return;
     S.loadingConf = true;
-    call('conflicts', {}).then(function (r) { S.loadingConf = false; S.conflicts = r.conflicts; if (S.tab === 'todo') render(); else renderNav(); })
+    call('conflicts', {}).then(function (r) { S.loadingConf = false; S.conflicts = r.conflicts; S.offs = r.offs || []; if (S.tab === 'todo') render(); else renderNav(); })
       .catch(function (e) { S.loadingConf = false; toast(e.message, 'err'); });
   }
   function renderTodo() {
     var pend = S.boot.pending || [], h = '<div class="pad">';
     h += '<section class="card"><header><h3>' + ic('inbox') + ' À replacer</h3><span class="mut">' + pend.length + '</span></header>';
     h += pend.length ? pend.map(pendingCard).join('') : '<p class="mut">Rien à rattraper. Quand tu annules une séance « à rattraper », elle arrive ici avec des créneaux libres proposés.</p>';
+    if (!S.conflicts) loadConflicts();
+    var offs = S.offs || [];
+    h += '</section><section class="card"><header><h3>' + ic('sun') + ' Pendant tes congés</h3>' + (S.conflicts ? '<span class="mut">' + offs.length + '</span>' : '') + '</header>';
+    if (!S.conflicts) h += '<p class="mut"><span class="spin dark"></span>Vérification…</p>';
+    else if (!offs.length) h += '<p class="mut">Aucune séance prévue pendant tes congés. Quand tu en poses, les séances concernées arrivent ici : rien n\'est supprimé tout seul.</p>';
+    else h += '<p class="mut small">Ces séances restent dans ton agenda tant que tu n\'as pas choisi : déplacer, annuler (à rattraper, due ou ne compte pas) ou garder.</p>' + offs.map(offCard).join('');
     h += '</section><section class="card"><header><h3>' + ic('warn') + ' Chevauchements (4 semaines)</h3></header>';
-    if (!S.conflicts) { loadConflicts(); h += '<p class="mut"><span class="spin dark"></span>Vérification…</p>'; }
+    if (!S.conflicts) h += '<p class="mut"><span class="spin dark"></span>Vérification…</p>';
     else if (!S.conflicts.length) h += '<p class="mut">Aucune séance ne chevauche Human, l\'IPMS ou un autre rendez-vous.</p>';
     else S.conflicts.forEach(function (x) {
       var e = x.ev, k = reg(e);
@@ -1849,6 +1869,20 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         '<div class="pc-a"><button class="btn sm primary" data-act="move-open" data-k="' + k + '">Déplacer</button><button class="btn sm ghost" data-act="ack" data-c="' + esc(e.c) + '" data-i="' + esc(e.i) + '">C\'est voulu</button></div></div>';
     });
     return h + '</section></div>';
+  }
+  function offCard(x) {
+    var e = x.ev, k = reg(e), o = x.off, last = addDays(o.ed, -1);
+    var per = o.sd === last ? cap(fDL(o.sd)) : 'du ' + fD(o.sd) + ' au ' + fD(last);
+    return '<div class="pcard" style="--c:' + esc(evColor(e)) + '"><div class="pc-h"><i class="dot"></i><div><b>' + esc(dispT(e)) + '</b>' +
+      '<span class="mut">' + esc(fDT(e.s)) + '–' + e.e.slice(11) + (e.k === 'session' ? ' · séance fixe' : '') + '</span>' +
+      '<span class="warn-t">' + ic('sun', 'mini') + ' Pendant « ' + esc(o.t) + ' » (' + esc(per) + ')</span></div></div>' +
+      '<div class="pc-a"><button class="btn sm primary" data-act="move-open" data-k="' + k + '">Déplacer</button>' +
+      '<button class="btn sm" data-act="cancel-open" data-k="' + k + '">Annuler…</button>' +
+      '<button class="btn sm ghost" data-act="ack" data-kind="off" data-c="' + esc(e.c) + '" data-i="' + esc(e.i) + '">Garder</button></div></div>';
+  }
+  // Séance (fixe ou ponctuelle) prévue un jour de congés, pas encore traitée.
+  function offFlag(e, it) {
+    return !!(it && it.off && (e.k === 'session' || e.k === 'coaching') && !e.okOff && !e.ad && e.e > nowP());
   }
   function openPendingPick(p) {
     var h = sheetHead('Replacer la séance', 'Prévue ' + esc(fDT(p.key)));
@@ -1889,7 +1923,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     function item(page, icon, title, sub) { return '<button class="mi" data-act="more-go" data-p="' + page + '">' + ic(icon) + '<span><b>' + title + '</b><small>' + sub + '</small></span>' + ic('right', 'chev') + '</button>'; }
     return '<div class="pad"><div class="menu">' +
       item('tasks', 'list', 'Tâches', 'Ta liste Google Tasks, avec ou sans date') +
-      item('off', 'sun', 'Congés', 'Bloque une période : les séances fixes sautent toutes seules') +
+      item('off', 'sun', 'Congés', 'Marque une période : ses séances arrivent dans « À traiter »') +
       item('share', 'share', 'Partager mon planning', 'Liens en lecture seule, révocables') +
       item('settings', 'gear', 'Réglages', 'Types, agendas, horaires de travail, séances fixes') +
       item('help', 'help', 'Aide', 'Comment ça marche') +
@@ -1933,7 +1967,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       return '<div class="empty">Chargement…</div>';
     }
     var o = S.offList;
-    var h = '<div class="pad"><p class="mut">Un événement « journée entière » de ton agenda dont le titre contient <b>' + esc(st().offWords || '') + '</b> bloque les séances fixes de ces jours-là. Elles reviennent si tu supprimes les congés.</p>' +
+    var h = '<div class="pad"><p class="mut">Un événement « journée entière » de ton agenda dont le titre contient <b>' + esc(st().offWords || '') + '</b> compte comme congés. Les séances prévues ces jours-là restent dans l\'agenda et arrivent dans « À traiter » : tu choisis de les déplacer, les annuler ou les garder. Rien n\'est supprimé tout seul.</p>' +
       '<form class="form card" data-form="off"><h3>Ajouter des congés</h3><div class="grid2"><label>Premier jour<input type="date" name="from" required value="' + today() + '"></label><label>Dernier jour<input type="date" name="to" required value="' + addDays(today(), 6) + '"></label></div>' +
       '<label>Titre<input name="title" value="Congés"></label><div class="sh-foot"><button class="btn primary" type="submit">Ajouter</button></div></form>';
     h += '<h3 class="sec">Congés à venir <span>' + o.off.length + '</span></h3>';
@@ -1942,7 +1976,6 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       h += '<div class="row-card">' + ic('sun') + '<span><b>' + esc(x.t) + '</b><small>' + (x.ed === addDays(x.sd, 1) ? cap(fDL(x.sd)) : 'Du ' + fD(x.sd) + ' au ' + fD(addDays(x.ed, -1))) + '</small></span>' +
         '<button class="ib sm" data-act="off-del" data-c="' + esc(x.c) + '" data-i="' + esc(x.i) + '" aria-label="Supprimer">' + ic('trash') + '</button></div>';
     });
-    if (o.skipped) h += '<p class="mut small">' + plural(o.skipped, 'séance fixe sautée', 'séances fixes sautées') + ' à cause des congés à venir.</p>';
     return h + '</div>';
   }
   function shareLink(key) {
@@ -1995,7 +2028,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         '<label class="tog"><input type="checkbox" data-s="cblock" data-id="' + esc(c.id) + '"' + (c.block ? ' checked' : '') + '><span class="sr">Compte pour mes disponibilités</span></label>' +
         '<label class="tog"><input type="checkbox" data-s="coff" data-id="' + esc(c.id) + '"' + (c.off ? ' checked' : '') + (c.holidays ? ' disabled' : '') + '><span class="sr">Signale mes congés</span></label></div>';
     });
-    h += '</div><p class="mut small">« Occupe » : compte pour les créneaux libres et les chevauchements. « Congés » : une journée entière de cet agenda avec un mot de congés bloque les séances fixes.</p></section>';
+    h += '</div><p class="mut small">« Occupe » : compte pour les créneaux libres et les chevauchements. « Congés » : une journée entière de cet agenda avec un mot de congés signale les séances de ces jours-là dans « À traiter ».</p></section>';
     h += '<section class="card"><h3>Horaires de travail</h3><p class="mut small">Pour proposer des créneaux libres.</p>';
     for (var d = 1; d <= 7; d++) {
       var v = s.hours[String(d)];
@@ -2007,7 +2040,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       '<label>Titre des séances<input data-s="titleFmt" value="' + esc(s.titleFmt) + '"><small class="mut">{prenom} et {nom} sont remplacés.</small></label>' +
       '<label>Créées à l\'avance sur<select data-s="horizon">' + [4, 6, 8, 12, 16, 26].map(function (n) { return '<option value="' + n + '"' + (+s.horizon === n ? ' selected' : '') + '>' + n + ' semaines</option>'; }).join('') + '</select></label>' +
       '<label>Mots qui signalent des congés<input data-s="offWords" value="' + esc(s.offWords) + '"></label>' +
-      '<label class="check"><input type="checkbox" data-s="offHolidays"' + (s.offHolidays ? ' checked' : '') + '> Pas de séances fixes les jours fériés</label>' +
+      '<label class="check"><input type="checkbox" data-s="offHolidays"' + (s.offHolidays ? ' checked' : '') + '> Jours fériés : signaler les séances dans « À traiter »</label>' +
       '<div class="grid2"><label>Pas des créneaux libres<select data-s="step">' + [15, 30, 60].map(function (n) { return '<option value="' + n + '"' + (+s.step === n ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label>' +
       '<label>Marge entre deux rendez-vous<select data-s="buffer">' + [0, 5, 10, 15, 30].map(function (n) { return '<option value="' + n + '"' + (+s.buffer === n ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label></div>' +
       '</section><div class="sh-foot sticky"><button class="btn primary" type="submit">Enregistrer les réglages</button></div></form></div>';
@@ -2040,13 +2073,13 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       '<li><code>Sonia mardi 18h</code> → coaching de Sonia mardi à 18:00 (durée de sa fiche)</li>' +
       '<li><code>rdv banque jeudi 14h30 45min</code> → RDV perso</li><li><code>réunion Human lundi 13h</code> → réunion</li>' +
       '<li><code>tâche appeler le comptable demain</code> → Google Tasks</li><li><code>Camille tous les mardis et jeudis 18h</code> → séances fixes</li>' +
-      '<li><code>vacances du 21/12 au 3/1</code> → congés (les séances fixes sautent)</li><li><code>kiné 3 décembre 8h30 @ Couëron</code> → avec un lieu</li></ul>' +
+      '<li><code>vacances du 21/12 au 3/1</code> → congés (leurs séances arrivent dans « À traiter »)</li><li><code>kiné 3 décembre 8h30 @ Couëron</code> → avec un lieu</li></ul>' +
       '<p class="mut">Tout est corrigible dans le formulaire avant d\'ajouter.</p></section>' +
       '<section class="card"><h3>Séances fixes</h3><p>Dans la fiche d\'un coaché, « Séances fixes » : jours, heures, fréquence et fin (sans fin, pack de N séances ou date). Les séances sont créées dans l\'agenda « Coaching INDAR » sur ' + esc(st().horizon || 8) + ' semaines et prolongées chaque nuit.</p></section>' +
       '<section class="card"><h3>En cas d\'imprévu</h3><ul>' +
       '<li><b>Déplacer › seulement cette séance</b> : le rythme ne change pas.</li><li><b>Déplacer › cette séance et les suivantes</b> : nouveau créneau fixe.</li>' +
       '<li><b>Annuler › à rattraper</b> : la séance va dans « À traiter », avec des créneaux libres proposés.</li><li><b>Annuler › due</b> ou <b>ne compte pas</b> : avec un pack, « ne compte pas » le prolonge.</li>' +
-      '<li><b>Pause</b> (fiche du coaché) : vacances, blessure. <b>Congés</b> (menu Plus) : bloque tout le monde.</li>' +
+      '<li><b>Pause</b> (fiche du coaché) : vacances, blessure. <b>Congés</b> (menu Plus) : les séances de la période arrivent dans « À traiter », rien n\'est supprimé.</li>' +
       '<li><b>Décaler la journée</b> (vue Jour) : tout ce qui suit glisse de 15 à 60 min.</li></ul></section>' +
       '<section class="card"><h3>Google Agenda reste la référence</h3><p>Tout ce que tu fais ici est écrit dans ton Google Agenda (et réciproquement). Une séance fixe supprimée directement dans Google Agenda n\'est pas recréée.</p></section></div>';
   }
@@ -2117,14 +2150,19 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       case 'edit-open': e = evAt(el); if (e) openEdit(e); break;
       case 'del-open': e = evAt(el); if (e) openDelete(e); break;
       case 'del-yes': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i }), 'Supprimé', function () { closeSheet(); localRemove(e.c, e.i); render(); refresh(); }).catch(function () { }); break;
-      case 'del-off': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i }), 'Congés supprimés : séances rétablies', function () { closeSheet(); S.offList = null; refresh(); }).catch(function () { }); break;
+      case 'del-off': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i }), 'Congés supprimés', function () { closeSheet(); S.offList = null; S.conflicts = null; refresh(); }).catch(function () { }); break;
       case 'pending-one': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i, mode: 'pending' }), 'Dans « À traiter »', function () { closeSheet(); localRemove(e.c, e.i); render(); refresh(); }).catch(function () { }); break;
       case 'cancel': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i, mode: el.getAttribute('data-mode') }),
         { pending: 'Séance à rattraper : voir « À traiter »', due: 'Séance annulée (due)', skip: 'Séance annulée' }[el.getAttribute('data-mode')], function () { closeSheet(); localRemove(e.c, e.i); render(); refresh(); }).catch(function () { }); break;
       case 'nudge': { e = evAt(el); var ns = addMinL(e.s, +el.getAttribute('data-min')); act(el, call('moveEvent', { c: e.c, i: e.i, s: ns, scope: 'one' }), 'Séance décalée à ' + ns.slice(11), function () { closeSheet(); localMove(e, ns, minsBetween(e.s, e.e)); render(); refresh(); }).catch(function () { }); break; }
       case 'dup': e = evAt(el); act(el, call('addEvent', { type: e.ty || (e.k === 'coaching' ? 'coaching' : defaultEventType()), coacheeId: e.cid || '', title: e.t, date: addDays(e.s.slice(0, 10), 7), time: e.s.slice(11), dur: minsBetween(e.s, e.e), location: e.l || '', notes: e.n || '', color: e.cl || '' }),
         'Dupliqué le ' + fD(addDays(e.s.slice(0, 10), 7)), function (r) { closeSheet(); localAdd(r && r.event); render(); refresh(); }).catch(function () { }); break;
-      case 'ack': act(el, call('ackConflict', { c: el.getAttribute('data-c'), i: el.getAttribute('data-i') }), 'Chevauchement accepté', function () { closeSheet(); S.conflicts = null; refresh(); }).catch(function () { }); break;
+      case 'ack': {
+        var kd = el.getAttribute('data-kind') || '';
+        act(el, call('ackConflict', { c: el.getAttribute('data-c'), i: el.getAttribute('data-i'), kind: kd }), kd === 'off' ? 'Séance gardée' : 'Chevauchement accepté',
+          function () { closeSheet(); S.conflicts = null; Object.keys(S.weeks).forEach(function (wk) { S.weeks[wk].stale = true; }); refresh(); }).catch(function () { });
+        break;
+      }
       case 'mv-q': {
         var f = el.closest('form'), q = el.getAttribute('data-q'), cur = f.date.value + 'T' + f.time.value;
         if (q === 'd1') cur = addDays(f.date.value, 1) + 'T' + f.time.value;
@@ -2189,7 +2227,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       case 'logout': lsDel('mp_cfg'); lsDel('mp_boot'); (lsGet('mp_wk') || []).forEach(function (k) { lsDel('mp_w_' + k); }); lsDel('mp_wk'); location.hash = ''; location.reload(); break;
       case 'task-toggle': toggleTask(el); break;
       case 'task-del': { var ti = el.getAttribute('data-i'); act(el, call('deleteTask', { i: ti }), 'Tâche supprimée', function () { if (S.tasks) S.tasks = S.tasks.filter(function (k) { return k.i !== ti; }); dropTaskLocal(ti); render(); }).catch(function () { }); break; }
-      case 'off-del': act(el, call('deleteEvent', { c: el.getAttribute('data-c'), i: el.getAttribute('data-i') }), 'Congés supprimés : séances rétablies', function () { S.offList = null; refresh(); }).catch(function () { }); break;
+      case 'off-del': act(el, call('deleteEvent', { c: el.getAttribute('data-c'), i: el.getAttribute('data-i') }), 'Congés supprimés', function () { S.offList = null; S.conflicts = null; refresh(); }).catch(function () { }); break;
       case 'share-copy': copyText(shareLink(el.getAttribute('data-key'))); break;
       case 'share-revoke': act(el, call('revokeShare', { id: el.getAttribute('data-id') }), 'Lien coupé', function () { S.shares = null; render(); }).catch(function () { }); break;
       case 'shift-open': openShift(el.getAttribute('data-d')); break;
@@ -2303,7 +2341,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       if (!title) return;
       act(btn, call('addTask', { title: title, date: f.date.value || '' }), 'Tâche ajoutée', function (r) { S.tasks = (S.tasks || []).concat([r.task]); f.reset(); render(); refresh(); }).catch(function () { });
     } else if (kind === 'off') {
-      act(btn, call('addOff', { from: f.from.value, to: f.to.value, title: f.title.value }), 'Congés ajoutés : séances fixes retirées', function () { S.offList = null; refresh(); }).catch(function () { });
+      act(btn, call('addOff', { from: f.from.value, to: f.to.value, title: f.title.value }), offMsg, function () { S.offList = null; S.conflicts = null; refresh(); }).catch(function () { });
     } else if (kind === 'share') {
       var calsSel = $$('input[name=cal]:checked', f).map(function (x) { return x.value; });
       var all = $$('input[name=cal]', f).length;
@@ -2315,7 +2353,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         render();
       }).catch(function () { });
     } else if (kind === 'settings') {
-      act(btn, call('saveSettings', { st: collectSettings(f) }), 'Réglages enregistrés', function () { refresh(); }).catch(function () { });
+      act(btn, call('saveSettings', { st: collectSettings(f) }), 'Réglages enregistrés', function () { S.conflicts = null; refresh(); }).catch(function () { });
     } else if (kind === 'shift') {
       act(btn, call('shiftDay', { date: f.getAttribute('data-d'), from: f.from.value, min: +f.min.value }), null, function (r) { toast(plural(r.moved, 'événement décalé', 'événements décalés')); closeSheet(); refresh(); }).catch(function () { });
     }
