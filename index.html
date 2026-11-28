@@ -369,7 +369,13 @@ details.card > summary::-webkit-details-marker { display: none; }
 .tasks { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 4px; }
 .checks { display: grid; gap: 2px; }
 .checks .dot { width: 10px; height: 10px; }
-.trow { display: grid; grid-template-columns: 1.2fr 1.2fr .9fr 1fr; gap: 6px; align-items: center; margin-top: 8px; }
+.trow { display: grid; grid-template-columns: 1.2fr 1.2fr .9fr 1fr auto; gap: 6px; align-items: center; margin-top: 8px; }
+.trow label.check.tg { font-size: 13px; min-height: 32px; gap: 6px; white-space: nowrap; }
+.trow label.check.tg input { width: 18px; height: 18px; }
+label.check.gtog { flex-wrap: wrap; row-gap: 0; }
+label.check.gtog small { flex-basis: 100%; padding-left: 37px; margin-top: -8px; font-weight: 400; font-size: 13px; }
+.gdest { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 13.5px; color: var(--mut); }
+.gdest .link { font-size: 13.5px; }
 .ctable { display: grid; gap: 4px; }
 .crow { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 54px 54px 54px; gap: 6px; align-items: center; font-size: 14px; }
 .crow.head { font-size: 12px; color: var(--mut); font-weight: 700; }
@@ -1356,6 +1362,10 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       if (e.key && e.key !== e.s) dl += '<div class="row">' + ic('clock') + '<span>Déplacée (créneau habituel : ' + esc(fDT(e.key)) + ')</span></div>';
     }
     if (e.n && e.k !== 'session') dl += '<div class="row notes">' + esc(e.n) + '</div>';
+    if (S.role === 'admin' && !e.ro) {
+      var gc = calById(e.c);
+      dl += '<div class="row">' + ic('cal') + '<span>' + (e.c === 'app' ? 'Dans l\'appli seulement (pas dans Google Agenda)' : 'Dans Google Agenda' + (gc ? ' · ' + esc(gc.label) : '')) + '</span></div>';
+    }
     var conf = S.role === 'admin' && !e.ad ? conflictsOf(e) : [];
     if (conf.length) {
       dl += '<div class="note warn">' + ic('warn') + '<div>Chevauche : ' + conf.map(function (o) { return esc(o.t) + ' (' + o.s.slice(11) + '–' + o.e.slice(11) + ')'; }).join(', ') +
@@ -1380,6 +1390,10 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       } else if (!e.ro && e.ad) {
         a += abtn('edit-open', k, 'edit', 'Modifier') + abtn('del-open', k, 'trash', 'Supprimer');
       }
+    }
+    if (S.role === 'admin' && e.app && !e.ro) {
+      var toG = e.c === 'app', all = e.k === 'session' ? ' (toutes les séances à venir)' : '';
+      a += abtn('ev-cal', k, 'sync', (toG ? 'Mettre aussi dans Google Agenda' : 'Retirer de Google Agenda, garder dans l\'appli') + all, 'data-g="' + (toG ? '1' : '0') + '"');
     }
     if (e.u && !DEMO) a += '<a class="abtn" href="' + esc(e.u) + '" target="_blank" rel="noopener">' + ic('ext') + '<span>Ouvrir dans Google Agenda</span></a>';
     if (e.ro && S.role === 'admin') a += '<p class="mut small">Agenda en lecture seule' + (/agendrix/i.test((calById(e.c) || {}).name || '') ? ' : géré dans Agendrix.' : /ypar/i.test((calById(e.c) || {}).name || '') ? ' : géré dans NetYParéo.' : '.') + '</p>';
@@ -1482,7 +1496,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     D = {
       text: '', type: pre.type || null, coachee: pre.coachee || null, title: '', date: defDate, time: defTime, dur: null,
       allDay: false, endDate: '', location: '', notes: '', repeat: false, rWds: null, rEvery: 1, rEnd: 'none', rCount: 10, rUntil: '',
-      defDate: defDate, defTime: defTime, locked: {}, more: false
+      google: null, defDate: defDate, defTime: defTime, locked: {}, more: false
     };
     if (pre.type) D.locked.type = true;
     if (pre.coachee) D.locked.coachee = true;
@@ -1502,6 +1516,18 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     if (D.allDay) return D.endDate ? 'off' : defaultEventType();
     if (D.time) return defaultEventType();
     return 'tache';
+  }
+  // Aussi dans Google Agenda ? Choix du formulaire, sinon le réglage du type (appli seulement par défaut).
+  function draftGoogle(t) {
+    if (D.google === true || D.google === false) return D.google;
+    var ty = t === 'off' ? null : typeById(t);
+    return !!(ty && ty.gdef);
+  }
+  // Agenda Google qui recevrait le créneau.
+  function gcalLabel(t) {
+    var s = st(), ty = typeById(t), id = t === 'off' ? s.primaryCal : (ty && ty.cal && ty.cal !== 'app' ? ty.cal : (ty && ty.coach ? s.coachCal : s.primaryCal));
+    var c = calById(id);
+    return c ? c.label : 'Google Agenda';
   }
   function coachTitle(c) { return String(st().titleFmt || 'Coaching {prenom}').replace(/\{prenom\}/g, c.prenom).replace(/\{nom\}/g, c.nom || '').replace(/\s+/g, ' ').trim(); }
   function draftDur(type) {
@@ -1530,7 +1556,8 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var p = $('#qa-prev');
     if (!p || !D) return;
     var s = draftSummary();
-    p.innerHTML = '<span class="pill">' + esc(s.type) + '</span> ' + esc(s.text) + (s.miss.length ? ' <span class="miss">· il manque ' + esc(s.miss.join(' et ')) + '</span>' : '');
+    var t = effType(), dest = t === 'tache' ? '' : ' <span class="mut">· ' + (draftGoogle(t) ? '+ Google Agenda' : 'appli seulement') + '</span>';
+    p.innerHTML = '<span class="pill">' + esc(s.type) + '</span> ' + esc(s.text) + dest + (s.miss.length ? ' <span class="miss">· il manque ' + esc(s.miss.join(' et ')) + '</span>' : '');
     var b = $('#add-save');
     if (b) b.disabled = s.miss.length > 0;
   }
@@ -1592,6 +1619,11 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         }
       }
     }
+    if (t !== 'tache') {
+      var gg = draftGoogle(t);
+      h += '<label class="check gtog"><input type="checkbox" data-f="google"' + (gg ? ' checked' : '') + '> Aussi dans Google Agenda' +
+        '<small class="mut">' + (gg ? 'Dans ton agenda Google « ' + esc(gcalLabel(t)) + ' »' : 'Non coché : gardé dans l\'appli seulement') + '</small></label>';
+    }
     h += '<button type="button" class="link more-t" data-act="d-more">' + (D.more ? 'Moins de détails' : 'Lieu, notes…') + '</button>';
     if (D.more || D.location || D.notes) {
       if (t !== 'tache' && t !== 'off') h += '<label>Lieu<input data-f="location" value="' + esc(D.location) + '" placeholder="' + esc(D.coachee && coachee(D.coachee) ? coachee(D.coachee).lieu || '' : '') + '"></label>';
@@ -1627,7 +1659,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
   function saveAdd(btn) {
     var t = effType(), c = D.coachee ? coachee(D.coachee) : null, p, label;
     if (t === 'off') {
-      p = call('addOff', { from: D.date, to: D.endDate || D.date, title: D.title || 'Congés' });
+      p = call('addOff', { from: D.date, to: D.endDate || D.date, title: D.title || 'Congés', google: draftGoogle('off') });
       label = offMsg; S.conflicts = null;
     } else if (t === 'tache') {
       p = call('addTask', { title: D.title, date: D.date || '', notes: D.notes });
@@ -1637,7 +1669,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       if (t === 'coaching' && c) title = D.title ? coachTitle(c) + ' · ' + D.title : '';
       var body = {
         type: t, coacheeId: t === 'coaching' && c ? c.id : '', title: title, date: D.date, time: D.time, dur: draftDur(t),
-        allDay: D.allDay, endDate: D.endDate, location: D.location, notes: D.notes
+        allDay: D.allDay, endDate: D.endDate, location: D.location, notes: D.notes, google: draftGoogle(t)
       };
       if (D.repeat && !D.allDay) body.repeat = { wds: D.rWds || [wd(D.date)], every: D.rEvery, count: D.rEnd === 'count' ? +D.rCount : 0, until: D.rEnd === 'until' ? D.rUntil : '' };
       p = call('addEvent', body);
@@ -1712,6 +1744,9 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     live.forEach(function (x) {
       h += '<div class="rhythm"><b>' + esc(slotsText(x)) + '</b><span class="mut">' +
         (x.start > today() ? 'À partir du ' + fD(x.start) : 'Depuis le ' + fD(x.start)) + (x.end ? ' · jusqu\'au ' + fD(x.end) : '') + '</span>';
+      h += '<div class="gdest">' + ic('cal', 'mini') + ' ' + (x.inApp ? 'Dans l\'appli seulement' : 'Aussi dans Google Agenda') +
+        ' · <button type="button" class="link" data-act="series-cal" data-sid="' + esc(x.id) + '" data-g="' + (x.inApp ? '1' : '0') + '">' +
+        (x.inApp ? 'Les mettre dans Google Agenda' : 'Les retirer de Google Agenda') + '</button></div>';
       if (x.count) {
         var pct = Math.min(100, Math.round(x.used / x.count * 100));
         h += '<div class="pack"><div class="meter"><i style="width:' + pct + '%"></i></div><span>Pack : <b>' + x.used + '</b> / ' + x.count + ' faites' + (x.last ? ' · dernière prévue le ' + fD(x.last.slice(0, 10)) : '') + '</span></div>';
@@ -1753,7 +1788,8 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       id: c.id || null, slots: r ? r.slots.map(function (s) { return { wd: s.wd, t: s.t, d: s.d }; }) : [],
       fixed: !!r || !!opts.rhythm, every: r ? r.every : 1, end: r ? (r.count ? 'count' : r.end ? 'until' : 'none') : 'none',
       count: r && r.count ? r.count : 10, offset: r ? r.used : 0, until: r && r.end ? r.end : '',
-      start: today(), from: today(), color: c.color || '', hadRhythm: !!r, focusRhythm: !!opts.rhythm
+      start: today(), from: today(), color: c.color || '', hadRhythm: !!r, focusRhythm: !!opts.rhythm,
+      google: !!((typeById('coaching') || {}).gdef)
     };
     if (F.fixed && !F.slots.length) F.slots = [{ wd: wd(today()), t: '18:00', d: c.duree || 60 }];
     F.initial = JSON.stringify([F.fixed, F.slots, F.every, F.end, F.count, F.offset, F.until]);
@@ -1787,7 +1823,9 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       if (F.end === 'count') h += '<div class="grid2"><label class="mini-l">Séances dans le pack<input type="number" min="1" max="300" data-r="count" value="' + F.count + '"></label><label class="mini-l">Déjà faites<input type="number" min="0" max="300" data-r="offset" value="' + F.offset + '"></label></div>';
       if (F.end === 'until') h += '<label class="mini-l">Dernier jour<input type="date" data-r="until" value="' + esc(F.until) + '"></label>';
       h += F.hadRhythm ? '<label class="mini-l">Appliquer à partir du<input type="date" data-r="from" value="' + esc(F.from) + '" min="' + today() + '"></label><p class="mut small">Les séances déjà passées ne bougent pas ; celles à venir sont recalculées.</p>'
-        : '<label class="mini-l">Première semaine à partir du<input type="date" data-r="start" value="' + esc(F.start) + '"></label>';
+        : '<label class="mini-l">Première semaine à partir du<input type="date" data-r="start" value="' + esc(F.start) + '"></label>' +
+          '<label class="check gtog"><input type="checkbox" data-r="google"' + (F.google ? ' checked' : '') + '> Séances aussi dans Google Agenda' +
+          '<small class="mut">' + (F.google ? 'Dans ton agenda Google « ' + esc(gcalLabel('coaching')) + ' »' : 'Non coché : gardées dans l\'appli seulement') + '</small></label>';
     } else if (F.hadRhythm) {
       h += '<p class="note">Les séances fixes s\'arrêteront à partir du <input type="date" data-r="from" value="' + esc(F.from) + '" min="' + today() + '"> (les séances déjà prévues après cette date seront retirées).</p>';
     }
@@ -1808,6 +1846,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
         count: F.fixed && F.end === 'count' ? +F.count : 0, offset: F.fixed && F.end === 'count' ? +F.offset : 0,
         end: F.fixed && F.end === 'until' ? F.until : ''
       };
+      if (!F.hadRhythm) body.rhythm.google = !!F.google;
     }
     act(btn, call('saveCoachee', body), F.id ? 'Fiche enregistrée' : 'Coaché ajouté', function (r) {
       closeSheet();
@@ -1969,7 +2008,8 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var o = S.offList;
     var h = '<div class="pad"><p class="mut">Un événement « journée entière » de ton agenda dont le titre contient <b>' + esc(st().offWords || '') + '</b> compte comme congés. Les séances prévues ces jours-là restent dans l\'agenda et arrivent dans « À traiter » : tu choisis de les déplacer, les annuler ou les garder. Rien n\'est supprimé tout seul.</p>' +
       '<form class="form card" data-form="off"><h3>Ajouter des congés</h3><div class="grid2"><label>Premier jour<input type="date" name="from" required value="' + today() + '"></label><label>Dernier jour<input type="date" name="to" required value="' + addDays(today(), 6) + '"></label></div>' +
-      '<label>Titre<input name="title" value="Congés"></label><div class="sh-foot"><button class="btn primary" type="submit">Ajouter</button></div></form>';
+      '<label>Titre<input name="title" value="Congés"></label><label class="check gtog"><input type="checkbox" name="google"> Aussi dans Google Agenda <small class="mut">Non coché : gardés dans l\'appli seulement</small></label>' +
+      '<div class="sh-foot"><button class="btn primary" type="submit">Ajouter</button></div></form>';
     h += '<h3 class="sec">Congés à venir <span>' + o.off.length + '</span></h3>';
     if (!o.off.length) h += '<p class="mut">Aucun.</p>';
     o.off.forEach(function (x) {
@@ -2011,13 +2051,14 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     S.setDraft = s;
     var writable = cl.filter(function (c) { return c.writable; });
     var h = '<div class="pad"><form class="form" data-form="settings">';
-    h += '<section class="card"><h3>Types d\'événements</h3><p class="mut small">Le type choisit l\'agenda, la durée et la couleur par défaut.</p>';
+    h += '<section class="card"><h3>Types d\'événements</h3><p class="mut small">Le type choisit la durée, la couleur et l\'agenda Google utilisé quand tu coches « Aussi dans Google Agenda ». « Google par défaut » : la case est déjà cochée à la création (sinon le créneau reste dans l\'appli seulement).</p>';
     s.types.forEach(function (t, i) {
       if (t.task) { h += '<div class="trow"><input data-s="tlabel" data-i="' + i + '" value="' + esc(t.label) + '" aria-label="Nom du type"><span class="mut small">Google Tasks</span></div>'; return; }
       h += '<div class="trow"><input data-s="tlabel" data-i="' + i + '" value="' + esc(t.label) + '" aria-label="Nom du type">' +
-        '<select data-s="tcal" data-i="' + i + '" aria-label="Agenda">' + writable.map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === t.cal ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') + '</select>' +
+        '<select data-s="tcal" data-i="' + i + '" aria-label="Agenda Google">' + writable.filter(function (c) { return !c.app; }).map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === t.cal ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') + '</select>' +
         '<select data-s="tdur" data-i="' + i + '" aria-label="Durée">' + durOptions(t.dur || 60) + '</select>' +
         (t.coach ? '<span class="mut small">couleur du coaché</span>' : '<select data-s="tcolor" data-i="' + i + '" aria-label="Couleur"><option value="">Couleur de l\'agenda</option>' + Object.keys(COLORS).map(function (k) { return '<option value="' + k + '"' + (t.color === k ? ' selected' : '') + '>' + COLOR_NAMES[k] + '</option>'; }).join('') + '</select>') +
+        '<label class="check tg"><input type="checkbox" data-s="tgdef" data-i="' + i + '"' + (t.gdef ? ' checked' : '') + '> Google par défaut</label>' +
         '</div>';
     });
     h += '</section><section class="card"><h3>Agendas</h3><div class="ctable">';
@@ -2055,6 +2096,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       else if (k === 'tcal') out.types[i].cal = v;
       else if (k === 'tdur') out.types[i].dur = +v;
       else if (k === 'tcolor') out.types[i].color = v;
+      else if (k === 'tgdef') out.types[i].gdef = v;
       else if (k.charAt(0) === 'c' && id) {
         var c = out.cals[id] || (out.cals[id] = {});
         c[{ clabel: 'label', cshow: 'show', cblock: 'block', coff: 'off' }[k]] = v;
@@ -2081,7 +2123,8 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       '<li><b>Annuler › à rattraper</b> : la séance va dans « À traiter », avec des créneaux libres proposés.</li><li><b>Annuler › due</b> ou <b>ne compte pas</b> : avec un pack, « ne compte pas » le prolonge.</li>' +
       '<li><b>Pause</b> (fiche du coaché) : vacances, blessure. <b>Congés</b> (menu Plus) : les séances de la période arrivent dans « À traiter », rien n\'est supprimé.</li>' +
       '<li><b>Décaler la journée</b> (vue Jour) : tout ce qui suit glisse de 15 à 60 min.</li></ul></section>' +
-      '<section class="card"><h3>Google Agenda reste la référence</h3><p>Tout ce que tu fais ici est écrit dans ton Google Agenda (et réciproquement). Une séance fixe supprimée directement dans Google Agenda n\'est pas recréée.</p></section></div>';
+      '<section class="card"><h3>Google Agenda et l\'appli</h3><p>Tout ce qui est dans ton Google Agenda (Human, IPMS, rendez-vous…) s\'affiche ici. L\'inverse se fait au cas par cas : à la création, coche <b>« Aussi dans Google Agenda »</b> pour l\'y écrire ; sinon le créneau reste dans l\'appli seulement (rangé dans ta feuille « Mon Planning — données »). Le réglage par défaut de chaque type est dans Réglages. Un créneau créé ici peut changer de côté depuis sa fiche ; pour une séance fixe, toutes les séances à venir du rythme suivent.</p>' +
+      '<p class="mut">Une séance fixe supprimée directement dans Google Agenda n\'est pas recréée.</p></section></div>';
   }
 
   // ------------------------------------------------------------------ jour : décaler
@@ -2155,8 +2198,24 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       case 'cancel': e = evAt(el); act(el, call('deleteEvent', { c: e.c, i: e.i, mode: el.getAttribute('data-mode') }),
         { pending: 'Séance à rattraper : voir « À traiter »', due: 'Séance annulée (due)', skip: 'Séance annulée' }[el.getAttribute('data-mode')], function () { closeSheet(); localRemove(e.c, e.i); render(); refresh(); }).catch(function () { }); break;
       case 'nudge': { e = evAt(el); var ns = addMinL(e.s, +el.getAttribute('data-min')); act(el, call('moveEvent', { c: e.c, i: e.i, s: ns, scope: 'one' }), 'Séance décalée à ' + ns.slice(11), function () { closeSheet(); localMove(e, ns, minsBetween(e.s, e.e)); render(); refresh(); }).catch(function () { }); break; }
-      case 'dup': e = evAt(el); act(el, call('addEvent', { type: e.ty || (e.k === 'coaching' ? 'coaching' : defaultEventType()), coacheeId: e.cid || '', title: e.t, date: addDays(e.s.slice(0, 10), 7), time: e.s.slice(11), dur: minsBetween(e.s, e.e), location: e.l || '', notes: e.n || '', color: e.cl || '' }),
+      case 'dup': e = evAt(el); act(el, call('addEvent', { type: e.ty || (e.k === 'coaching' ? 'coaching' : defaultEventType()), coacheeId: e.cid || '', title: e.t, date: addDays(e.s.slice(0, 10), 7), time: e.s.slice(11), dur: minsBetween(e.s, e.e), location: e.l || '', notes: e.n || '', color: e.cl || '', google: e.c !== 'app' }),
         'Dupliqué le ' + fD(addDays(e.s.slice(0, 10), 7)), function (r) { closeSheet(); localAdd(r && r.event); render(); refresh(); }).catch(function () { }); break;
+      case 'ev-cal': {
+        e = evAt(el);
+        var g1 = el.getAttribute('data-g') === '1';
+        act(el, call('eventCal', { c: e.c, i: e.i, google: g1 }), function (r) {
+          return r && r.moved !== undefined ? plural(r.moved, 'séance', 'séances') + (g1 ? ' mises dans Google Agenda' : ' retirées de Google Agenda (gardées dans l\'appli)')
+            : (g1 ? 'Mis dans Google Agenda' : 'Retiré de Google Agenda, gardé dans l\'appli');
+        }, function () { closeSheet(); S.conflicts = null; Object.keys(S.weeks).forEach(function (wk) { S.weeks[wk].stale = true; }); refresh(); }).catch(function () { });
+        break;
+      }
+      case 'series-cal': {
+        var g2 = el.getAttribute('data-g') === '1';
+        act(el, call('seriesCal', { sid: el.getAttribute('data-sid'), google: g2 }), function (r) {
+          return plural((r && r.moved) || 0, 'séance', 'séances') + (g2 ? ' mises dans Google Agenda' : ' retirées de Google Agenda (gardées dans l\'appli)');
+        }, function () { Object.keys(S.weeks).forEach(function (wk) { S.weeks[wk].stale = true; }); refresh(); }).catch(function () { });
+        break;
+      }
       case 'ack': {
         var kd = el.getAttribute('data-kind') || '';
         act(el, call('ackConflict', { c: el.getAttribute('data-c'), i: el.getAttribute('data-i'), kind: kd }), kd === 'off' ? 'Séance gardée' : 'Chevauchement accepté',
@@ -2288,6 +2347,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
     var r = el.getAttribute('data-r');
     if (r && S.form) {
       if (r === 'fixed') { S.form.fixed = el.checked; if (el.checked && !S.form.slots.length) S.form.slots = [{ wd: wd(today()), t: '18:00', d: 60 }]; }
+      if (r === 'google') S.form.google = el.checked;
       renderRhythm();
       return;
     }
@@ -2341,7 +2401,7 @@ body.share .hdr-l .who { display: flex; align-items: center; gap: 6px; white-spa
       if (!title) return;
       act(btn, call('addTask', { title: title, date: f.date.value || '' }), 'Tâche ajoutée', function (r) { S.tasks = (S.tasks || []).concat([r.task]); f.reset(); render(); refresh(); }).catch(function () { });
     } else if (kind === 'off') {
-      act(btn, call('addOff', { from: f.from.value, to: f.to.value, title: f.title.value }), offMsg, function () { S.offList = null; S.conflicts = null; refresh(); }).catch(function () { });
+      act(btn, call('addOff', { from: f.from.value, to: f.to.value, title: f.title.value, google: !!(f.google && f.google.checked) }), offMsg, function () { S.offList = null; S.conflicts = null; refresh(); }).catch(function () { });
     } else if (kind === 'share') {
       var calsSel = $$('input[name=cal]:checked', f).map(function (x) { return x.value; });
       var all = $$('input[name=cal]', f).length;
